@@ -79,9 +79,9 @@ fact {//All materials must either be in a vehicle or at a location
 }
 fact {
     //Jobs must be in a location
-    all j: Job | j in Location.job//lone j.~job
-  // Jobs must be unique to locations
-    //and all disj x, y : Location | no (x.job & y.job)
+    all j: Job | j in Location.job
+    // No shared jobs between locations
+    and all x, y : Location | no (x.job & y.job)
 }
 fact {
     // Each vehicle is in one place at a time
@@ -94,9 +94,6 @@ fact {
     all v: CargoVehicle | v.capacity >= 0
 }
 
-pred moveVehicle(v: Vehicle, newLoc: Location) {
-    v.location = newLoc
-}
 pred movePerson(p:Person,newLoc: Location){
     p.location = newLoc
 }
@@ -113,14 +110,48 @@ pred completeJob(l: Location) {
         // Ensure correct number of people with required roles present
         and all r: j.requiredRoles | some p: Person | p.location = l and p.role = r
 }
+pred addPassengers[pv: PassengerVehicle] {
+    // Get the current location of the PassengerVehicle
+    let loc = pv.location |
+        // Add all Persons at the same location to the passengers set
+        pv.passengers = {p: Person | p.location = loc}
+        // Ensure the number of passengers does not exceed the vehicle's capacity
+        and #pv.passengers <= pv.seats
+}
 
+pred movePassengerVehicle[pv: PassengerVehicle, newLoc: Location] {
+    // Ensure the new location is different from the current location
+    newLoc != pv.location
+
+    // Add passengers to the vehicle (up to capacity)
+    addPassengers[pv]
+
+    // Move the vehicle to the new location
+    pv.location = newLoc
+
+    // Move all passengers to the new location
+    all p: pv.passengers | movePerson[p, newLoc]
+}
 // Behavioral items to be added:
-pred moveCargoVehicle(cv: CargoVehicle, from: Location, to: Location) {
-    // Ensure all carried materials move with cargo vehicle
+pred moveCargoVehicle(cv: one CargoVehicle, to: one Location, materialsToMove: set Material) {
+    //Ensure new location is different from current
+    to != cv.location
+    // Ensure the materials to move are at the current location of the cargo vehicle
+    materialsToMove in cv.location.materials
+    // Ensure the total quantity of materials to move does not exceed the vehicle's capacity
+    let totalQuantity = sum m: materialsToMove | m.Quantity {
+        totalQuantity <= cv.capacity
+    }
+     // Update the vehicle's location
+    cv.location = to
+
+    // Remove the materials from the source location
+    cv.location.materials = cv.location.materials - materialsToMove
+
+    // Add the materials to the destination location
+    to.materials = to.materials + materialsToMove
 }
 
-pred completeJob(w: Workplace) {
-    // Remove job from workplace or mark as complete so it's ignored in future evaluations
-}
 
 run example{}
+run moveCargoVehicle for 10
